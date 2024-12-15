@@ -413,11 +413,11 @@ class FunctionChartCard extends HTMLElement {
   }
 }
 
-customElements.define('function-chart-card', FunctionChartCard);
+customElements.define('function-chart', FunctionChartCard);
 
 window.customCards = window.customCards || [];
 window.customCards.push({
-  type: "function-chart-card",
-  name: "Function Chart Card",
+  type: "function-chart",
+  name: "Function Chart",
   description: "A card that displays mathematical functions"
 });
