@@ -1,4 +1,4 @@
-// D'abord l'éditeur
+// Éditeur visuel
 class FunctionChartCardEditor extends HTMLElement {
   static get properties() {
     return { hass: {}, config: {} };
@@ -227,9 +227,8 @@ class FunctionChartCardEditor extends HTMLElement {
 
 customElements.define('function-chart-card-editor', FunctionChartCardEditor);
 
-// Ensuite la carte principale
+// Composant principal
 class FunctionChartCard extends HTMLElement {
-  // Ajout des méthodes pour l'éditeur
   static getConfigElement() {
     return document.createElement('function-chart-card-editor');
   }
@@ -251,8 +250,167 @@ class FunctionChartCard extends HTMLElement {
     };
   }
 
-  // Votre code existant...
-  [VOTRE CODE EXISTANT ICI]
+  set hass(hass) {
+    if (!this.initialized) {
+      this.initialized = true;
+      this.render();
+    }
+  }
+
+  constructor() {
+    super();
+    this.initialized = false;
+    this.config = {};
+  }
+
+  generatePoints(expression, xMin = -10, xMax = 10, steps = 100) {
+    const points = [];
+    const dx = (xMax - xMin) / steps;
+
+    for (let i = 0; i <= steps; i++) {
+      const x = xMin + i * dx;
+      try {
+        let y = eval(expression.replace(/x/g, x));
+        points.push([x, y]);
+      } catch (e) {
+        console.error('Error evaluating expression:', e);
+      }
+    }
+    return points;
+  }
+
+  generateGrid(width, height, margin, steps = 10) {
+    if (!this.config.showGrid) {
+      return '';
+    }
+
+    const graphWidth = width - 2 * margin;
+    const graphHeight = height - 2 * margin;
+    const xStep = graphWidth / steps;
+    const yStep = graphHeight / steps;
+    let grid = '';
+
+    // Vertical lines
+    for (let i = 0; i <= steps; i++) {
+      const x = margin + i * xStep;
+      grid += `<line x1="${x}" y1="${margin}" x2="${x}" y2="${height - margin}" 
+              stroke="#ddd" stroke-width="1" stroke-dasharray="4,4"/>`;
+    }
+
+    // Horizontal lines
+    for (let i = 0; i <= steps; i++) {
+      const y = margin + i * yStep;
+      grid += `<line x1="${margin}" y1="${y}" x2="${width - margin}" y2="${y}" 
+              stroke="#ddd" stroke-width="1" stroke-dasharray="4,4"/>`;
+    }
+
+    return grid;
+  }
+
+  generateAxisLabels(width, height, margin) {
+    const xMin = this.config.xRange?.[0] ?? -5;
+    const xMax = this.config.xRange?.[1] ?? 5;
+    const yMin = this.config.yRange?.[0] ?? -2;
+    const yMax = this.config.yRange?.[1] ?? 2;
+    
+    const stepX = (width - 2 * margin) / 10;
+    const stepY = (height - 2 * margin) / 10;
+    let labels = '';
+
+    // X-axis labels
+    for (let i = 0; i <= 10; i++) {
+      const x = margin + i * stepX;
+      const value = xMin + (i * (xMax - xMin)) / 10;
+      labels += `<text x="${x}" y="${height - margin + 20}" 
+                text-anchor="middle" font-size="12">${value.toFixed(1)}</text>`;
+    }
+
+    // Y-axis labels
+    for (let i = 0; i <= 10; i++) {
+      const y = height - (margin + i * stepY);
+      const value = yMin + (i * (yMax - yMin)) / 10;
+      labels += `<text x="${margin - 10}" y="${y}" 
+                text-anchor="end" alignment-baseline="middle" 
+                font-size="12">${value.toFixed(1)}</text>`;
+    }
+
+    return labels;
+  }
+
+  generateSVGPath(points, width = 400, height = 300, margin = 50) {
+    const graphWidth = width - 2 * margin;
+    const graphHeight = height - 2 * margin;
+    
+    const xMin = this.config.xRange?.[0] ?? -5;
+    const xMax = this.config.xRange?.[1] ?? 5;
+    const yMin = this.config.yRange?.[0] ?? -2;
+    const yMax = this.config.yRange?.[1] ?? 2;
+
+    return points.map((point, i) => {
+      const x = margin + ((point[0] - xMin) / (xMax - xMin)) * graphWidth;
+      const y = height - (margin + ((point[1] - yMin) / (yMax - yMin)) * graphHeight);
+      return `${i === 0 ? 'M' : 'L'} ${x} ${y}`;
+    }).join(' ');
+  }
+
+  setConfig(config) {
+    this.config = config;
+    this.render();
+  }
+
+  render() {
+    const width = 400;
+    const height = 300;
+    const margin = 50;
+    const backgroundColor = this.config.backgroundColor || '#ffffff';
+    const functions = this.config.functions || [{
+      expression: 'Math.sin(x)',
+      color: '#ff0000',
+      name: 'Example'
+    }];
+
+    this.innerHTML = `
+      <ha-card>
+        <div style="padding: 16px">
+          <h2>${this.config.title || 'Function Chart'}</h2>
+          
+          <div class="legend" style="margin-bottom: 8px;">
+            ${functions.map(func => `
+              <span style="margin-right: 16px;">
+                <span style="display: inline-block; width: 20px; height: 3px; background: ${func.color}; margin-right: 8px;"></span>
+                ${func.name}
+              </span>
+            `).join('')}
+          </div>
+
+          <svg width="${width}" height="${height}" style="background: ${backgroundColor};">
+            <!-- Grid -->
+            ${this.generateGrid(width, height, margin)}
+            
+            <!-- Axes -->
+            <line x1="${margin}" y1="${height - margin}" x2="${width - margin}" y2="${height - margin}" 
+                  stroke="black" stroke-width="2"/>
+            <line x1="${margin}" y1="${margin}" x2="${margin}" y2="${height - margin}" 
+                  stroke="black" stroke-width="2"/>
+            
+            <!-- Axis Labels -->
+            ${this.generateAxisLabels(width, height, margin)}
+
+            <!-- Functions -->
+            ${functions.map(func => {
+              const points = this.generatePoints(
+                func.expression,
+                this.config.xRange?.[0] ?? -5,
+                this.config.xRange?.[1] ?? 5
+              );
+              const path = this.generateSVGPath(points, width, height, margin);
+              return `<path d="${path}" stroke="${func.color}" fill="none" stroke-width="2"/>`;
+            }).join('')}
+          </svg>
+        </div>
+      </ha-card>
+    `;
+  }
 }
 
 customElements.define('function-chart-card', FunctionChartCard);
