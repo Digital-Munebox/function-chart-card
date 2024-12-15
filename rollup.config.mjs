@@ -1,20 +1,19 @@
-// rollup.config.js
 import resolve from '@rollup/plugin-node-resolve';
-import babel from '@rollup/plugin-babel';
 import commonjs from '@rollup/plugin-commonjs';
+import babel from '@rollup/plugin-babel';
 
 export default {
   input: 'src/function-chart-card.js',
   output: {
-    dir: 'dist',
-    format: 'es',
+    file: 'dist/function-chart-card.js',
+    format: 'es'
   },
   plugins: [
     resolve(),
+    commonjs(),
     babel({
       babelHelpers: 'bundled',
-      presets: ['@babel/preset-env'],
-    }),
-    commonjs()
+      presets: ['@babel/preset-env']
+    })
   ]
 };
