@@ -1,7 +1,12 @@
+// PREMIÈRE PARTIE - L'ÉDITEUR
 class FunctionChartCardEditor extends HTMLElement {
   constructor() {
     super();
     this.attachShadow({ mode: 'open' });
+  }
+
+  set hass(hass) {
+    this._hass = hass;
   }
 
   setConfig(config) {
@@ -24,25 +29,24 @@ class FunctionChartCardEditor extends HTMLElement {
 
     // Mise à jour de la configuration
     if (target.configValue) {
+      let newConfig = { ...this._config };
+      
       if (target.configValue.includes('.')) {
         const parts = target.configValue.split('.');
-        let current = { ...this._config };
-        let temp = current;
+        let current = newConfig;
         
         for (let i = 0; i < parts.length - 1; i++) {
-          if (!temp[parts[i]]) {
-            temp[parts[i]] = {};
+          if (!current[parts[i]]) {
+            current[parts[i]] = {};
           }
-          temp = temp[parts[i]];
+          current = current[parts[i]];
         }
-        temp[parts[parts.length - 1]] = value;
-        this._config = current;
+        current[parts[parts.length - 1]] = value;
       } else {
-        this._config = {
-          ...this._config,
-          [target.configValue]: value
-        };
+        newConfig[target.configValue] = value;
       }
+
+      this._config = newConfig;
     }
 
     // Envoyer l'événement de modification
@@ -59,34 +63,36 @@ class FunctionChartCardEditor extends HTMLElement {
       this._config.functions = [];
     }
 
-    const newFunction = {
-      expression: "Math.sin(x)",
-      name: `Function ${this._config.functions.length + 1}`,
-      color: "#ff0000"
-    };
-
-    this._config = {
+    const newConfig = {
       ...this._config,
-      functions: [...this._config.functions, newFunction]
+      functions: [
+        ...this._config.functions,
+        {
+          expression: "Math.sin(x)",
+          name: `Function ${this._config.functions.length + 1}`,
+          color: "#ff0000"
+        }
+      ]
     };
 
-    this._fireEvent();
-    this.render();
+    // Envoyer l'événement de modification
+    const event = new CustomEvent('config-changed', {
+      detail: { config: newConfig },
+      bubbles: true,
+      composed: true,
+    });
+    this.dispatchEvent(event);
   }
 
   _removeFunction(index) {
-    this._config = {
+    const newConfig = {
       ...this._config,
       functions: this._config.functions.filter((_, i) => i !== index)
     };
 
-    this._fireEvent();
-    this.render();
-  }
-
-  _fireEvent() {
+    // Envoyer l'événement de modification
     const event = new CustomEvent('config-changed', {
-      detail: { config: this._config },
+      detail: { config: newConfig },
       bubbles: true,
       composed: true,
     });
@@ -126,11 +132,9 @@ class FunctionChartCardEditor extends HTMLElement {
         ha-button {
           margin-top: 8px;
         }
-        .functions-section {
-          margin-top: 16px;
-        }
       </style>
-      <div>
+
+      <div class="card-config">
         <!-- Paramètres généraux -->
         <div class="group">
           <div class="group-title">Paramètres généraux</div>
@@ -233,7 +237,7 @@ class FunctionChartCardEditor extends HTMLElement {
         </div>
 
         <!-- Fonctions -->
-        <div class="group functions-section">
+        <div class="group">
           <div class="group-title">Fonctions</div>
           ${(this._config.functions || []).map((func, index) => `
             <div class="function-row">
@@ -276,21 +280,14 @@ class FunctionChartCardEditor extends HTMLElement {
 customElements.define('function-chart-card-editor', FunctionChartCardEditor);
 
 // Composant principal
+// DEUXIÈME PARTIE - LA CARTE PRINCIPALE
 class FunctionChartCard extends HTMLElement {
   constructor() {
     super();
     this.attachShadow({ mode: 'open' });
   }
 
-  setConfig(config) {
-    if (!config.functions || !Array.isArray(config.functions)) {
-      throw new Error('You need to define at least one function');
-    }
-    this._config = config;
-    this.render();
-  }
-
-  static getConfigElement() {
+  static get configElement() {
     return document.createElement('function-chart-card-editor');
   }
 
@@ -312,6 +309,19 @@ class FunctionChartCard extends HTMLElement {
         }
       ]
     };
+  }
+
+  set hass(hass) {
+    this._hass = hass;
+    this.render();
+  }
+
+  setConfig(config) {
+    if (!config.functions || !Array.isArray(config.functions)) {
+      throw new Error('You need to define at least one function');
+    }
+    this._config = config;
+    this.render();
   }
 
   generatePoints(expression, xMin = -5, xMax = 5, steps = 100) {
@@ -404,143 +414,15 @@ class FunctionChartCard extends HTMLElement {
   }
 
   render() {
-    // Créer les éléments de base
-    const card = document.createElement('ha-card');
-    const content = document.createElement('div');
-    content.style.padding = '16px';
+    if (!this._config) return;
 
-    // Ajouter le titre
-    const title = document.createElement('h2');
-    title.style.padding = '16px';
-    title.textContent = this._config.title || 'Function Chart';
-    card.appendChild(title);
-
-    // Ajouter la légende
-    const legend = document.createElement('div');
-    legend.style.display = 'flex';
-    legend.style.flexWrap = 'wrap';
-    legend.style.gap = '16px';
-    legend.style.marginBottom = '8px';
-
-    this._config.functions.forEach(func => {
-      const item = document.createElement('div');
-      item.style.display = 'flex';
-      item.style.alignItems = 'center';
-      item.style.gap = '8px';
-
-      const color = document.createElement('div');
-      color.style.width = '20px';
-      color.style.height = '3px';
-      color.style.backgroundColor = func.color;
-
-      const name = document.createElement('span');
-      name.textContent = func.name;
-
-      item.appendChild(color);
-      item.appendChild(name);
-      legend.appendChild(item);
-    });
-    content.appendChild(legend);
-
-    // Créer le SVG
     const width = 400;
     const height = 300;
     const margin = 50;
     const backgroundColor = this._config.backgroundColor || '#ffffff';
     const gridColor = this._config.gridColor || '#dddddd';
 
-    const svg = this.createSvgElement('svg', {
-      width,
-      height,
-      style: `background: ${backgroundColor}`,
-      viewBox: `0 0 ${width} ${height}`
-    });
-
-    // Ajouter la grille si activée
-    if (this._config.showGrid !== false) {
-      for (let i = 0; i <= 10; i++) {
-        const x = margin + i * (width - 2 * margin) / 10;
-        const y = margin + i * (height - 2 * margin) / 10;
-
-        const vLine = this.createSvgElement('line', {
-          x1: x,
-          y1: margin,
-          x2: x,
-          y2: height - margin,
-          stroke: gridColor,
-          'stroke-width': '1',
-          'stroke-dasharray': '4,4'
-        });
-
-        const hLine = this.createSvgElement('line', {
-          x1: margin,
-          y1: y,
-          x2: width - margin,
-          y2: y,
-          stroke: gridColor,
-          'stroke-width': '1',
-          'stroke-dasharray': '4,4'
-        });
-
-        svg.appendChild(vLine);
-        svg.appendChild(hLine);
-      }
-    }
-
-    // Ajouter les axes
-    const xAxis = this.createSvgElement('line', {
-      x1: margin,
-      y1: height - margin,
-      x2: width - margin,
-      y2: height - margin,
-      stroke: 'black',
-      'stroke-width': '2'
-    });
-
-    const yAxis = this.createSvgElement('line', {
-      x1: margin,
-      y1: margin,
-      x2: margin,
-      y2: height - margin,
-      stroke: 'black',
-      'stroke-width': '2'
-    });
-
-    svg.appendChild(xAxis);
-    svg.appendChild(yAxis);
-
-    // Ajouter les étiquettes des axes
-    this.addAxisLabels(svg, width, height, margin);
-
-    // Ajouter les fonctions
-    const xMin = this._config.xRange?.[0] ?? -5;
-    const xMax = this._config.xRange?.[1] ?? 5;
-    const yMin = this._config.yRange?.[0] ?? -2;
-    const yMax = this._config.yRange?.[1] ?? 2;
-
-    this._config.functions.forEach(func => {
-      const points = this.generatePoints(func.expression, xMin, xMax);
-      const pathData = points.map((point, i) => {
-        const x = margin + ((point[0] - xMin) / (xMax - xMin)) * (width - 2 * margin);
-        const y = height - (margin + ((point[1] - yMin) / (yMax - yMin)) * (height - 2 * margin));
-        return `${i === 0 ? 'M' : 'L'} ${x} ${y}`;
-      }).join(' ');
-
-      const path = this.createSvgElement('path', {
-        d: pathData,
-        stroke: func.color,
-        fill: 'none',
-        'stroke-width': '2'
-      });
-
-      svg.appendChild(path);
-    });
-
-    content.appendChild(svg);
-    card.appendChild(content);
-
-    // Mettre à jour le shadowRoot
-    this.shadowRoot.innerHTML = '';
+    // Styles
     const style = document.createElement('style');
     style.textContent = `
       :host {
@@ -582,12 +464,142 @@ class FunctionChartCard extends HTMLElement {
         height: 3px;
       }
     `;
+
+    // Création de la carte
+    const card = document.createElement('ha-card');
+    const content = document.createElement('div');
+    content.className = 'content';
+   
+    // Titre
+    const title = document.createElement('h2');
+    title.textContent = this._config.title || 'Function Chart';
+
+    // Légende
+    const legend = document.createElement('div');
+    legend.className = 'legend';
+
+    this._config.functions.forEach(func => {
+      const item = document.createElement('div');
+      item.className = 'legend-item';
+
+      const colorDiv = document.createElement('div');
+      colorDiv.className = 'legend-color';
+      colorDiv.style.backgroundColor = func.color;
+
+      const nameSpan = document.createElement('span');
+      nameSpan.textContent = func.name;
+
+      item.appendChild(colorDiv);
+      item.appendChild(nameSpan);
+      legend.appendChild(item);
+    });
+
+    // Création du SVG
+    const svg = this.createSvgElement('svg', {
+      width,
+      height,
+      style: `background: ${backgroundColor}`,
+      viewBox: `0 0 ${width} ${height}`
+    });
+
+    // Grille
+    if (this._config.showGrid !== false) {
+      const xStep = (width - 2 * margin) / 10;
+      const yStep = (height - 2 * margin) / 10;
+
+      for (let i = 0; i <= 10; i++) {
+        const x = margin + i * xStep;
+        const y = margin + i * yStep;
+
+        // Lignes verticales
+        svg.appendChild(this.createSvgElement('line', {
+          x1: x,
+          y1: margin,
+          x2: x,
+          y2: height - margin,
+          stroke: gridColor,
+          'stroke-width': '1',
+          'stroke-dasharray': '4,4'
+        }));
+
+        // Lignes horizontales
+        svg.appendChild(this.createSvgElement('line', {
+          x1: margin,
+          y1: y,
+          x2: width - margin,
+          y2: y,
+          stroke: gridColor,
+          'stroke-width': '1',
+          'stroke-dasharray': '4,4'
+        }));
+      }
+    }
+
+    // Axes
+    const xAxis = this.createSvgElement('line', {
+      x1: margin,
+      y1: height - margin,
+      x2: width - margin,
+      y2: height - margin,
+      stroke: 'black',
+      'stroke-width': '2'
+    });
+
+    const yAxis = this.createSvgElement('line', {
+      x1: margin,
+      y1: margin,
+      x2: margin,
+      y2: height - margin,
+      stroke: 'black',
+      'stroke-width': '2'
+    });
+
+    svg.appendChild(xAxis);
+    svg.appendChild(yAxis);
+
+    // Labels des axes
+    this.addAxisLabels(svg, width, height, margin);
+
+    // Tracer les fonctions
+    const xMin = this._config.xRange?.[0] ?? -5;
+    const xMax = this._config.xRange?.[1] ?? 5;
+    const yMin = this._config.yRange?.[0] ?? -2;
+    const yMax = this._config.yRange?.[1] ?? 2;
+
+    this._config.functions.forEach(func => {
+      const points = this.generatePoints(func.expression, xMin, xMax);
+      if (points.length > 0) {
+        const pathData = points.map((point, i) => {
+          const x = margin + ((point[0] - xMin) / (xMax - xMin)) * (width - 2 * margin);
+          const y = height - (margin + ((point[1] - yMin) / (yMax - yMin)) * (height - 2 * margin));
+          return `${i === 0 ? 'M' : 'L'} ${x} ${y}`;
+        }).join(' ');
+
+        const path = this.createSvgElement('path', {
+          d: pathData,
+          stroke: func.color,
+          fill: 'none',
+          'stroke-width': '2'
+        });
+
+        svg.appendChild(path);
+      }
+    });
+
+    // Assemblage final
+    content.appendChild(legend);
+    content.appendChild(svg);
+    card.appendChild(title);
+    card.appendChild(content);
+
+    // Mise à jour du shadowRoot
+    this.shadowRoot.innerHTML = '';
     this.shadowRoot.appendChild(style);
     this.shadowRoot.appendChild(card);
   }
 }
 
-// Enregistrement du composant
+// Enregistrement des composants
 customElements.define('function-chart-card', FunctionChartCard);
 
 // Déclaration pour Home Assistant
@@ -595,5 +607,7 @@ window.customCards = window.customCards || [];
 window.customCards.push({
   type: "function-chart-card",
   name: "Function Chart Card",
+  preview: true,
   description: "A card that displays mathematical functions"
 });
+
