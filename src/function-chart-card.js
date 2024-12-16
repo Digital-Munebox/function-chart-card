@@ -1,6 +1,6 @@
 /**
  * Function Chart Card
- * Version: 1.0.0
+ * Version: 2.0.1
  */
 
 // Éditeur de configuration
@@ -8,14 +8,63 @@ class FunctionChartCardEditor extends HTMLElement {
   constructor() {
     super();
     this.attachShadow({ mode: 'open' });
+    this._entities = [];
+  }
+
+  static getDefaultConfig() {
+    return {
+      title: "Function Chart",
+      showGrid: true,
+      backgroundColor: '#ffffff',
+      gridColor: '#dddddd',
+      xRange: [-5, 5],
+      yRange: [-2, 2],
+      xLabel: "X",
+      yLabel: "Y",
+      functions: []
+    };
+  }
+
+  async firstUpdated() {
+    if (this._hass) {
+      const states = this._hass.states;
+      this._entities = Object.keys(states)
+        .filter(entityId => {
+          const state = states[entityId];
+          return !isNaN(parseFloat(state.state));
+        })
+        .map(entityId => ({
+          id: entityId,
+          name: states[entityId].attributes.friendly_name || entityId,
+          domain: entityId.split('.')[0]
+        }))
+        .sort((a, b) => a.name.localeCompare(b.name));
+      this.render();
+    }
   }
 
   set hass(hass) {
     this._hass = hass;
+    this.firstUpdated();
   }
 
   setConfig(config) {
-    this._config = { ...config };
+    this._config = {
+      ...FunctionChartCardEditor.getDefaultConfig(),
+      ...config
+    };
+
+    if (!Array.isArray(this._config.functions)) {
+      this._config.functions = [];
+    }
+
+    if (!Array.isArray(this._config.xRange)) {
+      this._config.xRange = [-5, 5];
+    }
+    if (!Array.isArray(this._config.yRange)) {
+      this._config.yRange = [-2, 2];
+    }
+
     this.render();
   }
 
@@ -23,65 +72,74 @@ class FunctionChartCardEditor extends HTMLElement {
     if (!this._config) return;
 
     const target = ev.target;
-    let value = target.value;
+    const value = this._parseValue(target);
+    const configPath = target.configValue;
 
-    // Convertir les valeurs selon le type
+    if (configPath) {
+      const newConfig = this._updateConfigValue(configPath, value);
+      this._emit(newConfig);
+    }
+  }
+
+  _parseValue(target) {
+    let value = target.value;
+    
     if (target.type === 'number') {
       value = parseFloat(value);
     } else if (target.type === 'checkbox') {
       value = target.checked;
     }
+    
+    return value;
+  }
 
-    // Mise à jour de la configuration
-    if (target.configValue) {
-      let newConfig = { ...this._config };
-      
-      if (target.configValue.includes('.')) {
-        const parts = target.configValue.split('.');
-        let current = newConfig;
-        
-        for (let i = 0; i < parts.length - 1; i++) {
-          if (!current[parts[i]]) {
-            current[parts[i]] = {};
-          }
-          current = current[parts[i]];
-        }
-        current[parts[parts.length - 1]] = value;
-      } else {
-        newConfig[target.configValue] = value;
+  _updateConfigValue(path, value) {
+    const newConfig = { ...this._config };
+    const parts = path.split('.');
+    let current = newConfig;
+    
+    for (let i = 0; i < parts.length - 1; i++) {
+      if (!current[parts[i]]) {
+        current[parts[i]] = {};
       }
-
-      this._config = newConfig;
+      current = current[parts[i]];
     }
-
-    // Envoyer l'événement de modification
-    this._emit(this._config);
+    
+    current[parts[parts.length - 1]] = value;
+    return newConfig;
   }
 
   _emit(config) {
     const event = new CustomEvent('config-changed', {
-      detail: { config: config },
+      detail: { config },
       bubbles: true,
-      composed: true,
+      composed: true
     });
     this.dispatchEvent(event);
   }
 
-  _addFunction() {
+  _addFunction(type = 'expression') {
     if (!this._config.functions) {
       this._config.functions = [];
     }
 
+    const newFunction = type === 'entity' ? 
+      {
+        type: 'entity',
+        entityId: '',
+        name: `Entity ${this._config.functions.length + 1}`,
+        color: this._getRandomColor()
+      } :
+      {
+        type: 'expression',
+        expression: "Math.sin(x)",
+        name: `Function ${this._config.functions.length + 1}`,
+        color: this._getRandomColor()
+      };
+
     const newConfig = {
       ...this._config,
-      functions: [
-        ...this._config.functions,
-        {
-          expression: "Math.sin(x)",
-          name: `Function ${this._config.functions.length + 1}`,
-          color: "#ff0000"
-        }
-      ]
+      functions: [...this._config.functions, newFunction]
     };
 
     this._emit(newConfig);
@@ -94,6 +152,79 @@ class FunctionChartCardEditor extends HTMLElement {
     };
 
     this._emit(newConfig);
+  }
+
+  _getRandomColor() {
+    const colors = ['#FF0000', '#00FF00', '#0000FF', '#FFFF00', '#FF00FF', '#00FFFF'];
+    return colors[Math.floor(Math.random() * colors.length)];
+  }
+
+  _renderFunctionRow(func, index) {
+    if (func.type === 'entity') {
+      return `
+        <div class="function-row">
+          <ha-select
+            label="Entité"
+            .value="${func.entityId}"
+            .configValue="functions.${index}.entityId"
+            @change="${this._valueChanged}"
+          >
+            ${this._entities.map(entity => `
+              <ha-list-item value="${entity.id}">${entity.name}</ha-list-item>
+            `).join('')}
+          </ha-select>
+          <ha-textfield
+            label="Nom"
+            .value="${func.name}"
+            .configValue="functions.${index}.name"
+            @change="${this._valueChanged}"
+          ></ha-textfield>
+          <ha-textfield
+            type="color"
+            label="Couleur"
+            .value="${func.color}"
+            .configValue="functions.${index}.color"
+            @change="${this._valueChanged}"
+          ></ha-textfield>
+          <ha-icon-button
+            .path="${this._getTrashIcon()}"
+            @click="${() => this._removeFunction(index)}"
+          ></ha-icon-button>
+        </div>
+      `;
+    }
+    
+    return `
+      <div class="function-row">
+        <ha-textfield
+          label="Expression"
+          .value="${func.expression}"
+          .configValue="functions.${index}.expression"
+          @change="${this._valueChanged}"
+        ></ha-textfield>
+        <ha-textfield
+          label="Nom"
+          .value="${func.name}"
+          .configValue="functions.${index}.name"
+          @change="${this._valueChanged}"
+        ></ha-textfield>
+        <ha-textfield
+          type="color"
+          label="Couleur"
+          .value="${func.color}"
+          .configValue="functions.${index}.color"
+          @change="${this._valueChanged}"
+        ></ha-textfield>
+        <ha-icon-button
+          .path="${this._getTrashIcon()}"
+          @click="${() => this._removeFunction(index)}"
+        ></ha-icon-button>
+      </div>
+    `;
+  }
+
+  _getTrashIcon() {
+    return "M19,4H15.5L14.5,3H9.5L8.5,4H5V6H19M6,19A2,2 0 0,0 8,21H16A2,2 0 0,0 18,19V7H6V19Z";
   }
 
   render() {
@@ -112,22 +243,30 @@ class FunctionChartCardEditor extends HTMLElement {
         }
         .group {
           margin-top: 16px;
-          padding: 8px;
+          padding: 16px;
           border: 1px solid var(--divider-color, #e0e0e0);
-          border-radius: 4px;
+          border-radius: 8px;
         }
         .group-title {
           font-weight: bold;
-          margin-bottom: 8px;
+          margin-bottom: 16px;
         }
         .function-row {
           display: flex;
           align-items: center;
           gap: 8px;
-          margin-bottom: 8px;
+          margin-bottom: 16px;
         }
-        ha-button {
-          margin-top: 8px;
+        .button-row {
+          display: flex;
+          gap: 8px;
+          margin-top: 16px;
+        }
+        ha-select {
+          width: 100%;
+        }
+        ha-textfield {
+          width: 100%;
         }
       </style>
 
@@ -178,20 +317,36 @@ class FunctionChartCardEditor extends HTMLElement {
 
         <!-- Configuration des axes -->
         <div class="group">
-          <div class="group-title">Axe X</div>
+          <div class="group-title">Axes</div>
           <div class="side-by-side">
             <ha-textfield
               type="number"
-              label="Minimum"
+              label="X Min"
               .value="${this._config.xRange?.[0] ?? -5}"
               .configValue="xRange.0"
               @change="${this._valueChanged}"
             ></ha-textfield>
             <ha-textfield
               type="number"
-              label="Maximum"
+              label="X Max"
               .value="${this._config.xRange?.[1] ?? 5}"
               .configValue="xRange.1"
+              @change="${this._valueChanged}"
+            ></ha-textfield>
+          </div>
+          <div class="side-by-side">
+            <ha-textfield
+              type="number"
+              label="Y Min"
+              .value="${this._config.yRange?.[0] ?? -2}"
+              .configValue="yRange.0"
+              @change="${this._valueChanged}"
+            ></ha-textfield>
+            <ha-textfield
+              type="number"
+              label="Y Max"
+              .value="${this._config.yRange?.[1] ?? 2}"
+              .configValue="yRange.1"
               @change="${this._valueChanged}"
             ></ha-textfield>
           </div>
@@ -202,28 +357,6 @@ class FunctionChartCardEditor extends HTMLElement {
               .configValue="xLabel"
               @change="${this._valueChanged}"
             ></ha-textfield>
-          </div>
-        </div>
-
-        <div class="group">
-          <div class="group-title">Axe Y</div>
-          <div class="side-by-side">
-            <ha-textfield
-              type="number"
-              label="Minimum"
-              .value="${this._config.yRange?.[0] ?? -2}"
-              .configValue="yRange.0"
-              @change="${this._valueChanged}"
-            ></ha-textfield>
-            <ha-textfield
-              type="number"
-              label="Maximum"
-              .value="${this._config.yRange?.[1] ?? 2}"
-              .configValue="yRange.1"
-              @change="${this._valueChanged}"
-            ></ha-textfield>
-          </div>
-          <div class="side-by-side">
             <ha-textfield
               label="Label Y"
               .value="${this._config.yLabel || ''}"
@@ -235,39 +368,22 @@ class FunctionChartCardEditor extends HTMLElement {
 
         <!-- Fonctions -->
         <div class="group">
-          <div class="group-title">Fonctions</div>
-          ${(this._config.functions || []).map((func, index) => `
-            <div class="function-row">
-              <ha-textfield
-                label="Expression"
-                .value="${func.expression}"
-                .configValue="functions.${index}.expression"
-                @change="${this._valueChanged}"
-              ></ha-textfield>
-              <ha-textfield
-                label="Nom"
-                .value="${func.name}"
-                .configValue="functions.${index}.name"
-                @change="${this._valueChanged}"
-              ></ha-textfield>
-              <ha-textfield
-                type="color"
-                label="Couleur"
-                .value="${func.color}"
-                .configValue="functions.${index}.color"
-                @change="${this._valueChanged}"
-              ></ha-textfield>
-              <ha-icon-button
-                .path="M19,4H15.5L14.5,3H9.5L8.5,4H5V6H19M6,19A2,2 0 0,0 8,21H16A2,2 0 0,0 18,19V7H6V19Z"
-                @click="${() => this._removeFunction(index)}"
-              ></ha-icon-button>
-            </div>
-          `).join('')}
-          <ha-button
-            @click="${this._addFunction}"
-          >
-            Ajouter une fonction
-          </ha-button>
+          <div class="group-title">Fonctions et Entités</div>
+          ${(this._config.functions || []).map((func, index) => 
+            this._renderFunctionRow(func, index)
+          ).join('')}
+          <div class="button-row">
+            <ha-button
+              @click="${() => this._addFunction('expression')}"
+            >
+              Ajouter une fonction
+            </ha-button>
+            <ha-button
+              @click="${() => this._addFunction('entity')}"
+            >
+              Ajouter une entité
+            </ha-button>
+          </div>
         </div>
       </div>
     `;
@@ -286,23 +402,40 @@ class FunctionChartCard extends HTMLElement {
   }
 
   static getStubConfig() {
-    return {
-      title: "Function Chart",
-      showGrid: true,
-      backgroundColor: '#ffffff',
-      gridColor: '#dddddd',
-      xRange: [-5, 5],
-      yRange: [-2, 2],
-      xLabel: "X",
-      yLabel: "Y",
-      functions: [
-        {
-          expression: "Math.sin(x)",
-          name: "Sinus",
-          color: "#FF0000"
-        }
-      ]
+    return FunctionChartCardEditor.getDefaultConfig();
+  }
+
+  setConfig(config) {
+    if (!config) {
+      throw new Error('Invalid configuration');
+    }
+
+    this._config = {
+      ...FunctionChartCardEditor.getDefaultConfig(),
+      ...config
     };
+
+    if (!Array.isArray(this._config.functions)) {
+      this._config.functions = [];
+    }
+
+    if (!Array.isArray(this._config.xRange)) {
+      this._config.xRange = [-5, 5];
+    }
+    if (!Array.isArray(this._config.yRange)) {
+      this._config.yRange = [-2, 2];
+    }
+
+    this._config.functions.forEach(func => {
+      if (func.type === 'entity' && !func.entityId) {
+        throw new Error('Entity functions must have an entityId');
+      }
+      if (func.type === 'expression' && !func.expression) {
+        throw new Error('Expression functions must have an expression');
+      }
+    });
+
+    this.render();
   }
 
   set hass(hass) {
@@ -310,28 +443,36 @@ class FunctionChartCard extends HTMLElement {
     this.render();
   }
 
-  setConfig(config) {
-    if (!config.functions || !Array.isArray(config.functions)) {
-      throw new Error('You need to define at least one function');
-    }
-    this._config = config;
-    this.render();
+  _getEntityValue(entityId) {
+    if (!this._hass || !entityId) return null;
+    const state = this._hass.states[entityId];
+    if (!state) return null;
+    const value = parseFloat(state.state);
+    return isNaN(value) ? null : value;
   }
 
-  generatePoints(expression, xMin = -5, xMax = 5, steps = 100) {
+  generatePoints(func, xMin = -5, xMax = 5, steps = 100) {
     const points = [];
     const dx = (xMax - xMin) / steps;
     
-    for (let i = 0; i <= steps; i++) {
-      const x = xMin + i * dx;
-      try {
-        const safeEval = new Function('x', `return ${expression}`);
-        const y = safeEval(x);
-        if (!isNaN(y) && isFinite(y)) {
-          points.push([x, y]);
+    if (func.type === 'entity') {
+      const value = this._getEntityValue(func.entityId);
+      if (value !== null) {
+        points.push([xMin, value]);
+        points.push([xMax, value]);
+      }
+    } else {
+      for (let i = 0; i <= steps; i++) {
+        const x = xMin + i * dx;
+        try {
+          const safeEval = new Function('x', `return ${func.expression}`);
+          const y = safeEval(x);
+          if (!isNaN(y) && isFinite(y)) {
+            points.push([x, y]);
+          }
+        } catch (e) {
+          console.error('Error evaluating expression:', e);
         }
-      } catch (e) {
-        console.error('Error evaluating expression:', e);
       }
     }
     return points;
@@ -343,7 +484,6 @@ class FunctionChartCard extends HTMLElement {
       element.setAttribute(key, value);
     }
     return element;
-  }
 
   addAxisLabels(svg, width, height, margin) {
     const xMin = this._config.xRange?.[0] ?? -5;
@@ -562,7 +702,7 @@ class FunctionChartCard extends HTMLElement {
     const yMax = this._config.yRange?.[1] ?? 2;
 
     this._config.functions.forEach(func => {
-      const points = this.generatePoints(func.expression, xMin, xMax);
+      const points = this.generatePoints(func, xMin, xMax);
       if (points.length > 0) {
         const path = this.createSvgElement('path', {
           d: points.map((point, i) => {
@@ -598,8 +738,8 @@ window.customCards.push({
   type: "function-chart-card",
   name: "Function Chart Card",
   preview: true,
-  description: "A card that displays mathematical functions",
-  documentationURL: "https://github.com/your-repo/function-chart-card"  // À modifier avec votre URL
+  description: "A card that displays mathematical functions and entity values",
+  documentationURL: "https://github.com/your-repo/function-chart-card"
 });
 
 console.info("Function Chart Card registered successfully");
