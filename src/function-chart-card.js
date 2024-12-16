@@ -1,4 +1,9 @@
-// PREMIÈRE PARTIE - L'ÉDITEUR
+/**
+ * Function Chart Card
+ * Version: 1.0.0
+ */
+
+// Éditeur de configuration
 class FunctionChartCardEditor extends HTMLElement {
   constructor() {
     super();
@@ -50,8 +55,12 @@ class FunctionChartCardEditor extends HTMLElement {
     }
 
     // Envoyer l'événement de modification
+    this._emit(this._config);
+  }
+
+  _emit(config) {
     const event = new CustomEvent('config-changed', {
-      detail: { config: this._config },
+      detail: { config: config },
       bubbles: true,
       composed: true,
     });
@@ -75,13 +84,7 @@ class FunctionChartCardEditor extends HTMLElement {
       ]
     };
 
-    // Envoyer l'événement de modification
-    const event = new CustomEvent('config-changed', {
-      detail: { config: newConfig },
-      bubbles: true,
-      composed: true,
-    });
-    this.dispatchEvent(event);
+    this._emit(newConfig);
   }
 
   _removeFunction(index) {
@@ -90,13 +93,7 @@ class FunctionChartCardEditor extends HTMLElement {
       functions: this._config.functions.filter((_, i) => i !== index)
     };
 
-    // Envoyer l'événement de modification
-    const event = new CustomEvent('config-changed', {
-      detail: { config: newConfig },
-      bubbles: true,
-      composed: true,
-    });
-    this.dispatchEvent(event);
+    this._emit(newConfig);
   }
 
   render() {
@@ -277,17 +274,14 @@ class FunctionChartCardEditor extends HTMLElement {
   }
 }
 
-customElements.define('function-chart-card-editor', FunctionChartCardEditor);
-
 // Composant principal
-// DEUXIÈME PARTIE - LA CARTE PRINCIPALE
 class FunctionChartCard extends HTMLElement {
   constructor() {
     super();
     this.attachShadow({ mode: 'open' });
   }
 
-  static get configElement() {
+  static getConfigElement() {
     return document.createElement('function-chart-card-editor');
   }
 
@@ -469,10 +463,11 @@ class FunctionChartCard extends HTMLElement {
     const card = document.createElement('ha-card');
     const content = document.createElement('div');
     content.className = 'content';
-   
+
     // Titre
     const title = document.createElement('h2');
     title.textContent = this._config.title || 'Function Chart';
+    card.appendChild(title);
 
     // Légende
     const legend = document.createElement('div');
@@ -493,6 +488,7 @@ class FunctionChartCard extends HTMLElement {
       item.appendChild(nameSpan);
       legend.appendChild(item);
     });
+    content.appendChild(legend);
 
     // Création du SVG
     const svg = this.createSvgElement('svg', {
@@ -511,8 +507,7 @@ class FunctionChartCard extends HTMLElement {
         const x = margin + i * xStep;
         const y = margin + i * yStep;
 
-        // Lignes verticales
-        svg.appendChild(this.createSvgElement('line', {
+        const vLine = this.createSvgElement('line', {
           x1: x,
           y1: margin,
           x2: x,
@@ -520,10 +515,10 @@ class FunctionChartCard extends HTMLElement {
           stroke: gridColor,
           'stroke-width': '1',
           'stroke-dasharray': '4,4'
-        }));
+        });
+        svg.appendChild(vLine);
 
-        // Lignes horizontales
-        svg.appendChild(this.createSvgElement('line', {
+        const hLine = this.createSvgElement('line', {
           x1: margin,
           y1: y,
           x2: width - margin,
@@ -531,7 +526,8 @@ class FunctionChartCard extends HTMLElement {
           stroke: gridColor,
           'stroke-width': '1',
           'stroke-dasharray': '4,4'
-        }));
+        });
+        svg.appendChild(hLine);
       }
     }
 
@@ -544,6 +540,7 @@ class FunctionChartCard extends HTMLElement {
       stroke: 'black',
       'stroke-width': '2'
     });
+    svg.appendChild(xAxis);
 
     const yAxis = this.createSvgElement('line', {
       x1: margin,
@@ -553,8 +550,6 @@ class FunctionChartCard extends HTMLElement {
       stroke: 'black',
       'stroke-width': '2'
     });
-
-    svg.appendChild(xAxis);
     svg.appendChild(yAxis);
 
     // Labels des axes
@@ -569,27 +564,21 @@ class FunctionChartCard extends HTMLElement {
     this._config.functions.forEach(func => {
       const points = this.generatePoints(func.expression, xMin, xMax);
       if (points.length > 0) {
-        const pathData = points.map((point, i) => {
-          const x = margin + ((point[0] - xMin) / (xMax - xMin)) * (width - 2 * margin);
-          const y = height - (margin + ((point[1] - yMin) / (yMax - yMin)) * (height - 2 * margin));
-          return `${i === 0 ? 'M' : 'L'} ${x} ${y}`;
-        }).join(' ');
-
         const path = this.createSvgElement('path', {
-          d: pathData,
+          d: points.map((point, i) => {
+            const x = margin + ((point[0] - xMin) / (xMax - xMin)) * (width - 2 * margin);
+            const y = height - (margin + ((point[1] - yMin) / (yMax - yMin)) * (height - 2 * margin));
+            return `${i === 0 ? 'M' : 'L'} ${x} ${y}`;
+          }).join(' '),
           stroke: func.color,
           fill: 'none',
           'stroke-width': '2'
         });
-
         svg.appendChild(path);
       }
     });
 
-    // Assemblage final
-    content.appendChild(legend);
     content.appendChild(svg);
-    card.appendChild(title);
     card.appendChild(content);
 
     // Mise à jour du shadowRoot
@@ -600,6 +589,7 @@ class FunctionChartCard extends HTMLElement {
 }
 
 // Enregistrement des composants
+customElements.define('function-chart-card-editor', FunctionChartCardEditor);
 customElements.define('function-chart-card', FunctionChartCard);
 
 // Déclaration pour Home Assistant
@@ -608,6 +598,8 @@ window.customCards.push({
   type: "function-chart-card",
   name: "Function Chart Card",
   preview: true,
-  description: "A card that displays mathematical functions"
+  description: "A card that displays mathematical functions",
+  documentationURL: "https://github.com/your-repo/function-chart-card"  // À modifier avec votre URL
 });
 
+console.info("Function Chart Card registered successfully");
