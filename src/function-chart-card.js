@@ -390,14 +390,6 @@ class FunctionChartCardEditor extends HTMLElement {
   }
 }
 
-/**
- * Function Chart Card
- * Version: 2.0.1
- */
-
-// Éditeur de configuration
-// ... [Code de l'éditeur inchangé jusqu'à la classe FunctionChartCard]
-
 // Composant principal
 class FunctionChartCard extends HTMLElement {
   constructor() {
