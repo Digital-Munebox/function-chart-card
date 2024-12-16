@@ -1,4 +1,3 @@
-// Éditeur de configuration
 class FunctionChartCardEditor extends HTMLElement {
   constructor() {
     super();
@@ -14,26 +13,78 @@ class FunctionChartCardEditor extends HTMLElement {
     if (!this._config) return;
 
     const target = ev.target;
-    const value = target.type === 'checkbox' ? target.checked : 
-                  target.type === 'number' ? parseFloat(target.value) : 
-                  target.value;
-    
+    let value = target.value;
+
+    // Convertir les valeurs selon le type
+    if (target.type === 'number') {
+      value = parseFloat(value);
+    } else if (target.type === 'checkbox') {
+      value = target.checked;
+    }
+
+    // Mise à jour de la configuration
     if (target.configValue) {
       if (target.configValue.includes('.')) {
         const parts = target.configValue.split('.');
-        let current = this._config;
+        let current = { ...this._config };
+        let temp = current;
+        
         for (let i = 0; i < parts.length - 1; i++) {
-          if (!current[parts[i]]) {
-            current[parts[i]] = {};
+          if (!temp[parts[i]]) {
+            temp[parts[i]] = {};
           }
-          current = current[parts[i]];
+          temp = temp[parts[i]];
         }
-        current[parts[parts.length - 1]] = value;
+        temp[parts[parts.length - 1]] = value;
+        this._config = current;
       } else {
-        this._config[target.configValue] = value;
+        this._config = {
+          ...this._config,
+          [target.configValue]: value
+        };
       }
     }
 
+    // Envoyer l'événement de modification
+    const event = new CustomEvent('config-changed', {
+      detail: { config: this._config },
+      bubbles: true,
+      composed: true,
+    });
+    this.dispatchEvent(event);
+  }
+
+  _addFunction() {
+    if (!this._config.functions) {
+      this._config.functions = [];
+    }
+
+    const newFunction = {
+      expression: "Math.sin(x)",
+      name: `Function ${this._config.functions.length + 1}`,
+      color: "#ff0000"
+    };
+
+    this._config = {
+      ...this._config,
+      functions: [...this._config.functions, newFunction]
+    };
+
+    this._fireEvent();
+    this.render();
+  }
+
+  _removeFunction(index) {
+    this._config = {
+      ...this._config,
+      functions: this._config.functions.filter((_, i) => i !== index)
+    };
+
+    this._fireEvent();
+    this.render();
+  }
+
+  _fireEvent() {
     const event = new CustomEvent('config-changed', {
       detail: { config: this._config },
       bubbles: true,
@@ -59,12 +110,24 @@ class FunctionChartCardEditor extends HTMLElement {
         .group {
           margin-top: 16px;
           padding: 8px;
-          border: 1px solid #ccc;
+          border: 1px solid var(--divider-color, #e0e0e0);
           border-radius: 4px;
         }
         .group-title {
           font-weight: bold;
           margin-bottom: 8px;
+        }
+        .function-row {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          margin-bottom: 8px;
+        }
+        ha-button {
+          margin-top: 8px;
+        }
+        .functions-section {
+          margin-top: 16px;
         }
       </style>
       <div>
@@ -75,8 +138,8 @@ class FunctionChartCardEditor extends HTMLElement {
             <ha-textfield
               label="Titre"
               .value="${this._config.title || ''}"
-              .configValue=${'title'}
-              @input=${this._valueChanged}
+              .configValue="title"
+              @change="${this._valueChanged}"
             ></ha-textfield>
           </div>
           <div class="side-by-side">
@@ -84,8 +147,8 @@ class FunctionChartCardEditor extends HTMLElement {
               label="Couleur de fond"
               type="color"
               .value="${this._config.backgroundColor || '#ffffff'}"
-              .configValue=${'backgroundColor'}
-              @input=${this._valueChanged}
+              .configValue="backgroundColor"
+              @change="${this._valueChanged}"
             ></ha-textfield>
           </div>
         </div>
@@ -95,9 +158,9 @@ class FunctionChartCardEditor extends HTMLElement {
           <div class="group-title">Grille</div>
           <div class="side-by-side">
             <ha-switch
-              .checked=${this._config.showGrid !== false}
-              .configValue=${'showGrid'}
-              @change=${this._valueChanged}
+              .checked="${this._config.showGrid !== false}"
+              .configValue="showGrid"
+              @change="${this._valueChanged}"
             ></ha-switch>
             <span>Afficher la grille</span>
           </div>
@@ -106,8 +169,8 @@ class FunctionChartCardEditor extends HTMLElement {
               label="Couleur de la grille"
               type="color"
               .value="${this._config.gridColor || '#dddddd'}"
-              .configValue=${'gridColor'}
-              @input=${this._valueChanged}
+              .configValue="gridColor"
+              @change="${this._valueChanged}"
             ></ha-textfield>
           </div>
         </div>
@@ -120,23 +183,23 @@ class FunctionChartCardEditor extends HTMLElement {
               type="number"
               label="Minimum"
               .value="${this._config.xRange?.[0] ?? -5}"
-              .configValue=${'xRange.0'}
-              @input=${this._valueChanged}
+              .configValue="xRange.0"
+              @change="${this._valueChanged}"
             ></ha-textfield>
             <ha-textfield
               type="number"
               label="Maximum"
               .value="${this._config.xRange?.[1] ?? 5}"
-              .configValue=${'xRange.1'}
-              @input=${this._valueChanged}
+              .configValue="xRange.1"
+              @change="${this._valueChanged}"
             ></ha-textfield>
           </div>
           <div class="side-by-side">
             <ha-textfield
               label="Label X"
               .value="${this._config.xLabel || ''}"
-              .configValue=${'xLabel'}
-              @input=${this._valueChanged}
+              .configValue="xLabel"
+              @change="${this._valueChanged}"
             ></ha-textfield>
           </div>
         </div>
@@ -148,25 +211,62 @@ class FunctionChartCardEditor extends HTMLElement {
               type="number"
               label="Minimum"
               .value="${this._config.yRange?.[0] ?? -2}"
-              .configValue=${'yRange.0'}
-              @input=${this._valueChanged}
+              .configValue="yRange.0"
+              @change="${this._valueChanged}"
             ></ha-textfield>
             <ha-textfield
               type="number"
               label="Maximum"
               .value="${this._config.yRange?.[1] ?? 2}"
-              .configValue=${'yRange.1'}
-              @input=${this._valueChanged}
+              .configValue="yRange.1"
+              @change="${this._valueChanged}"
             ></ha-textfield>
           </div>
           <div class="side-by-side">
             <ha-textfield
               label="Label Y"
               .value="${this._config.yLabel || ''}"
-              .configValue=${'yLabel'}
-              @input=${this._valueChanged}
+              .configValue="yLabel"
+              @change="${this._valueChanged}"
             ></ha-textfield>
           </div>
+        </div>
+
+        <!-- Fonctions -->
+        <div class="group functions-section">
+          <div class="group-title">Fonctions</div>
+          ${(this._config.functions || []).map((func, index) => `
+            <div class="function-row">
+              <ha-textfield
+                label="Expression"
+                .value="${func.expression}"
+                .configValue="functions.${index}.expression"
+                @change="${this._valueChanged}"
+              ></ha-textfield>
+              <ha-textfield
+                label="Nom"
+                .value="${func.name}"
+                .configValue="functions.${index}.name"
+                @change="${this._valueChanged}"
+              ></ha-textfield>
+              <ha-textfield
+                type="color"
+                label="Couleur"
+                .value="${func.color}"
+                .configValue="functions.${index}.color"
+                @change="${this._valueChanged}"
+              ></ha-textfield>
+              <ha-icon-button
+                .path="M19,4H15.5L14.5,3H9.5L8.5,4H5V6H19M6,19A2,2 0 0,0 8,21H16A2,2 0 0,0 18,19V7H6V19Z"
+                @click="${() => this._removeFunction(index)}"
+              ></ha-icon-button>
+            </div>
+          `).join('')}
+          <ha-button
+            @click="${this._addFunction}"
+          >
+            Ajouter une fonction
+          </ha-button>
         </div>
       </div>
     `;
