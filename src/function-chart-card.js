@@ -229,11 +229,19 @@ class FunctionChartCard extends HTMLElement {
   }
 }
 
+// Enregistrer les éléments personnalisés
 customElements.define('function-chart-card', FunctionChartCard);
+customElements.define('function-chart-editor', FunctionChartCardEditor);
 
-window.customCards = window.customCards || [];
-window.customCards.push({
-  type: "function-chart",
-  name: "Function Chart",
-  description: "A card that displays mathematical functions"
-});
+// Déclarer la carte pour Home Assistant
+if (!customElements.get('function-chart-card')) {
+  console.error("Impossible d'enregistrer function-chart-card");
+} else {
+  window.customCards = window.customCards || [];
+  window.customCards.push({
+    type: "function-chart",
+    name: "Function Chart",
+    preview: false,
+    description: "A card that displays mathematical functions"
+  });
+}
